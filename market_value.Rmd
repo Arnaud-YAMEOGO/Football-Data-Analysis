@@ -1,0 +1,464 @@
+---
+title: "PROJECT"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+date: "2024-12-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###  I - Modèles prédictifs
+
+#### 1- Objectifs des modèles
+
+L'objectif de cette section, qui fait suite à la deuxième partie, est de développer des modèles permettant d'extraire des informations sur les caractéristiques des joueurs, notamment leurs performances. Après avoir étudié leurs capacités intrinsèques, nous nous concentrerons ici sur la valeur marchande des joueurs. La question centrale est de déterminer quels paramètres influencent cette valeur et quelle est l'importance relative de chacun de ces paramètres.
+
+
+Commençons par importer les bibliothèques qui nous seront utiles:
+
+
+
+
+
+```{python}
+
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
+
+
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+
+from datetime import datetime
+```
+
+```{python}
+players = pd.read_csv("players.csv")
+appearances = pd.read_csv("appearances.csv")
+
+appearances.head
+
+```
+
+
+
+
+#### 2- Choix des modèles
+
+Dans cette section, nous allons présenter les modèles de régression linéaire et de Random Forest, choisis pour prédire la valeur marchande des joueurs de football. Ces modèles ont été sélectionnés pour leur capacité à capturer les relations entre les caractéristiques des joueurs et leur valeur, tout en prenant en compte différents types de variables.
+
+##### 2.1 - Régression Linéaire
+
+La régression linéaire est l'un des modèles les plus simples et les plus utilisés dans les problèmes de prédiction. Elle cherche à établir une relation linéaire entre une variable dépendante (dans ce cas, la valeur marchande du joueur) et un ensemble de variables indépendantes (les caractéristiques des joueurs).
+
+**Avantages de la régression linéaire :**
+
+- **Simplicité** : Facile à interpréter et à implémenter.
+
+- **Interprétabilité** : Permet de comprendre l'impact de chaque variable indépendante sur la variable cible (valeur marchande).
+
+- **Rapidité** : Modèle rapide à entraîner, ce qui est important dans des environnements avec des datasets relativement petits.
+
+Cependant, la régression linéaire peut avoir des limitations si les relations entre les variables sont non linéaires ou si les données contiennent des interactions complexes.
+
+##### 2.2 - Random Forest
+
+Le Random Forest est un modèle d'ensemble qui utilise un grand nombre d'arbres décisionnels pour faire des prédictions. Chaque arbre est entraîné sur une partie aléatoire des données, ce qui réduit le risque de surapprentissage (overfitting).
+
+**Avantages de Random Forest :**
+
+- **Performance** : Il peut capturer des relations non linéaires complexes entre les variables.
+
+- **Robustesse** : Moins sensible au bruit dans les données grâce à sa nature d'ensemble.
+
+- **Gestion des interactions** : Peut bien gérer les interactions complexes entre les variables sans nécessiter de spécification explicite.
+
+- **Moins de prétraitement nécessaire** : Random Forest est capable de gérer des données manquantes et de détecter des relations complexes sans nécessiter de normalisation préalable.
+
+Cependant, le Random Forest peut être plus difficile à interpréter que la régression linéaire, car il s'agit d'un modèle complexe avec de nombreux arbres décisionnels. De plus, il peut être plus lent à entraîner sur de grands datasets.
+
+#### 2.3 - Choix du modèle
+
+Le choix entre la régression linéaire et Random Forest dépend des spécificités du problème et des données. La régression linéaire est idéale si nous pensons que la relation entre les caractéristiques des joueurs et leur valeur est principalement linéaire et que l'interprétabilité du modèle est une priorité. En revanche, Random Forest est préférable si les relations sont complexes et non linéaires, et si la performance prédictive est un facteur clé.
+
+Dans la suite de ce projet, nous allons entraîner et évaluer ces deux modèles pour comparer leurs performances et leur capacité à prédire la valeur marchande des joueurs.
+
+
+### III - Modèles prédictifs
+
+#### 2- Préparation des données pour la modélisation
+
+Avant de passer à la construction et à l'évaluation des modèles, il est essentiel de préparer les données. Cette étape inclut la fusion de nos deux datasets suivant la clé commune player_id, la séparation des données en jeux d'entraînement et de test, ainsi que la normalisation et l'encodage des variables nécessaires à la modélisation.
+
+#### 2-1: Fusion des datasets
+
+```{python}
+# Vérifions d'abord la présence de `player_id` dans les deux datasets
+if 'player_id' not in players.columns or 'player_id' not in appearances.columns:
+    raise ValueError("La colonne 'player_id' est absente dans l'un des datasets.")
+
+# Calculer les statistiques agrégées pour chaque joueur dans `appearances`
+aggregated_stats = appearances.groupby('player_id').agg({
+    'yellow_cards': 'sum',
+    'red_cards': 'sum',
+    'goals': 'sum',
+    'assists': 'sum',
+    'minutes_played': 'sum',
+}).reset_index()
+
+# Renommons les colonnes pour éviter les conflits
+aggregated_stats.rename(columns={
+    'yellow_cards': 'total_yellow_cards',
+    'red_cards': 'total_red_cards',
+    'goals': 'total_goals',
+    'assists': 'total_assists',
+    'minutes_played': 'total_minutes_played'
+}, inplace=True)
+
+# Fusionner les deux datasets sur `player_id`
+merged_data = pd.merge(players, aggregated_stats, on='player_id', how='inner')
+
+# Supprimer les colonnes peu pertinentes 
+columns_to_drop = ['first_name', 'last_name', 'name', 'image_url', 'url', 'agent_name', 'player_code']
+merged_data.drop(columns=[col for col in columns_to_drop if col in merged_data.columns], inplace=True)
+```
+
+```{python}
+merged_data.dtypes
+```
+On peut déjà apercevoir les features de nos prochains modèles sur le dataset global.
+
+#### 2.2 - Corrélation entre les variables
+Avant de procéder au traitement de nos données, nous allons observer la corrélation entre les variables afin de voir l'influence de chaque paramètre sur notre variable cible et par la suite mieux choisir nos 'features' pour le modèle.
+
+```{python}
+numeric_data = merged_data
+categorical_columns = ['foot', 'position', 'current_club_domestic_competition_id']
+for col in categorical_columns:
+    le = LabelEncoder()
+    numeric_data[col] = le.fit_transform(numeric_data[col])
+
+
+# Filtrer uniquement les colonnes numériques
+numeric_data = numeric_data.select_dtypes(include=['float64', 'int64'])
+
+
+# Calcul de la matrice de corrélation
+plt.figure(figsize=(6, 6))
+correlation_matrix = numeric_data.corr()
+
+# Rotation des étiquettes des axes x pour qu'elles soient plus lisibles
+plt.xticks(rotation=45, ha='right')  # Rotation des étiquettes de l'axe x
+plt.yticks(rotation=0)  # Pas de rotation pour l'axe y
+
+# Ajuster l'espacement autour du graphique
+plt.subplots_adjust(bottom=0.3, left=0.3)
+
+# Tracer la matrice de corrélation
+sns.heatmap(correlation_matrix, annot=True, fmt=".2f", annot_kws={'size': 7}, cmap="coolwarm", cbar=True)
+plt.title("Matrice de corrélation (colonnes numériques)")
+plt.show()
+
+```
+
+De cette matrice, on note déjà une corrélation non négligeable entre "market_value_in_eur" et d'autres paramètres tels que "highest_market_value_in_eur", "total_assists", "total_goals" etc. Ces paramètres seront donc déterminants pour la prédiction de la valeur marchande des joueurs.
+
+
+#### 2.3 - Séparation des données en jeux d'entraînement et de test
+
+Pour évaluer les performances des modèles de manière fiable, nous devons diviser les données en deux jeux distincts : un jeu d'entraînement pour construire le modèle, et un jeu de test pour évaluer sa capacité à généraliser.
+
+Nous utilisons la fonction `train_test_split` de `scikit-learn` pour effectuer cette séparation.
+
+```{python}
+from sklearn.preprocessing import StandardScaler
+
+# Séparation des features et de la cible
+features = [   
+            'total_goals', 'total_assists', 'total_minutes_played','highest_market_value_in_eur','last_season']
+X = numeric_data[features]
+y = numeric_data['market_value_in_eur']
+
+X = X.dropna()
+y = y.dropna()
+
+# Séparation en jeu d'entraînement et de test
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+# Prétraitement des données (normalisation des features)
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+```
+
+
+#### 2.4 - Entrainement des modèles
+```{python}
+# Modèle Linéaire
+linear_model = LinearRegression()
+linear_model.fit(X_train_scaled, y_train)
+
+# Prédictions avec le modèle linéaire
+y_pred_linear = linear_model.predict(X_test_scaled)
+
+# Modèle Random Forest
+rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+rf_model.fit(X_train, y_train)
+
+# Prédictions avec le modèle Random Forest
+y_pred_rf = rf_model.predict(X_test)
+
+# Évaluation des modèles
+mae_linear = mean_absolute_error(y_test, y_pred_linear)
+rmse_linear = np.sqrt(mean_squared_error(y_test, y_pred_linear))
+
+mae_rf = mean_absolute_error(y_test, y_pred_rf)
+rmse_rf = np.sqrt(mean_squared_error(y_test, y_pred_rf))
+
+# Calcul de R^2
+r2_linear = linear_model.score(X_test_scaled, y_test)
+r2_rf = rf_model.score(X_test, y_test)
+
+print(f"Linear Regression - MAE: {mae_linear:.2f}, RMSE: {rmse_linear:.2f}, R²: {r2_linear:.2f}")
+print(f"Random Forest - MAE: {mae_rf:.2f}, RMSE: {rmse_rf:.2f}, R²: {r2_rf:.2f}")
+
+
+```
+
+Les résultats montrent que la **régression linéaire** obtient un MAE de 1,773,249.69, un RMSE de 4,271,917.51 et un R² de 0.68. Cela signifie que bien qu'il soit capable d'expliquer 68 % de la variance, ses prédictions sont relativement éloignées des valeurs réelles, avec des erreurs assez importantes. En revanche, le **modèle Random Forest** se montre plus performant, avec un MAE de 898,599.01, un RMSE de 3,446,567.42 et un R² de 0.79. Il réussit ainsi à prédire plus précisément les valeurs réelles et explique mieux la variabilité des données, ce qui en fait un modèle plus robuste pour cette tâche.
+
+
+```{python}
+# Visualisation des résultats
+plt.figure(figsize=(12, 6))
+
+# Comparaison des erreurs résiduelles
+plt.subplot(1, 2, 1)
+plt.scatter(y_test, y_pred_linear, color='blue', alpha=0.5, label='Linear Regression')
+plt.scatter(y_test, y_pred_rf, color='red', alpha=0.5, label='Random Forest')
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'k--', lw=2)
+plt.title("Comparaison Prédictions vs Réelles")
+plt.xlabel("Valeur réelle")
+plt.ylabel("Valeur prédite")
+plt.legend()
+
+# Erreurs résiduelles
+plt.subplot(1, 2, 2)
+plt.hist(y_test - y_pred_linear, bins=50, alpha=0.7, label='Linear Regression', color='blue')
+plt.hist(y_test - y_pred_rf, bins=50, alpha=0.7, label='Random Forest', color='red')
+plt.title("Distribution des erreurs résiduelles")
+plt.xlabel("Erreur résiduelle")
+plt.ylabel("Fréquence")
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+```
+Les graphiques ci-dessus confirmes les remarques précédentes.
+L'analyse des erreurs résiduelles montre que les erreurs des modèles ne sont pas globalement bien distribuées autour de zéro, ce qui suggère que les prédictions sont relativement éloignées des valeurs réelles. 
+Les modèles ne prédisent pas correctement la valeur cible.
+
+#### 2.5 - Amélioration des modèles
+Nous avons essayé d'autres modèles, fait varier les paramètres des deux modèles ci-dessous mais il n'y avait pas vraiment de changement notable. Nous avons donc pensé à revoir nos données.
+Notre approche consistait à consiste à transformer et créer de nouvelles variables à partir de nos données brutes afin d'améliorer la performance des modèles. En d'autres termes, il s'agit de façonner les données pour qu'elles soient plus compréhensibles et utiles pour l'algorithme. Nous avons utilisé cette méthode pour extraire des informations supplémentaires et rendre nos modèles plus efficaces. Cela peut inclure des ajustements comme la création de nouvelles variables ou l'encodage des données catégorielles. L'objectif était de donner aux modèles des entrées plus pertinentes, ce qui a contribué à améliorer la précision de nos prédictions.
+
+```{python}
+# Âge des joueurs
+numeric_data = merged_data
+current_year = datetime.now().year
+numeric_data['age'] = current_year - pd.to_datetime(numeric_data['date_of_birth']).dt.year
+
+# Durée restante au contrat
+numeric_data['contract_years_remaining'] = pd.to_datetime(numeric_data['contract_expiration_date']).dt.year - current_year
+numeric_data['contract_years_remaining'] = numeric_data['contract_years_remaining'].fillna(0)  # Remplacez les NaN par 0
+
+
+categorical_columns = ['foot', 'position', 'current_club_domestic_competition_id']
+for col in categorical_columns:
+    le = LabelEncoder()
+    numeric_data[col] = le.fit_transform(numeric_data[col])
+
+
+# Filtrer uniquement les colonnes numériques
+numeric_data = numeric_data.select_dtypes(include=['float64', 'int64'])
+
+
+# Contribution offensive
+numeric_data['offensive_contribution'] = numeric_data['total_goals'] + numeric_data['total_assists']
+
+# Ratios normalisés
+numeric_data['goals_per_minute'] = numeric_data['total_goals'] / numeric_data['total_minutes_played']
+numeric_data['assists_per_minute'] = numeric_data['total_assists'] / numeric_data['total_minutes_played']
+
+# Remplacement des NaN créés (ex : total_minutes_played = 0)
+numeric_data.fillna(0, inplace=True)
+
+# Interaction entre buts et minutes
+numeric_data['interaction_goals_minutes'] = numeric_data['total_goals'] * numeric_data['total_minutes_played']
+
+# Interaction entre taille et buts
+numeric_data['interaction_height_goals'] = numeric_data['height_in_cm'] * numeric_data['total_goals']
+
+# Supprimer ou remplir les valeurs manquantes (si elles existent)
+numeric_data = numeric_data.dropna()
+
+# Calcul de la matrice de corrélation
+plt.figure(figsize=(12, 8))
+correlation_matrix = numeric_data.corr()
+
+# Rotation des étiquettes des axes x pour qu'elles soient plus lisibles
+plt.xticks(rotation=45, ha='right')  # Rotation des étiquettes de l'axe x
+plt.yticks(rotation=0)  # Pas de rotation pour l'axe y
+
+
+
+# Tracer la matrice de corrélation
+sns.heatmap(correlation_matrix, annot=True, fmt=".2f", annot_kws={'size': 7}, cmap="coolwarm", cbar=True)
+plt.title("Matrice de corrélation (colonnes numériques)")
+plt.show()
+
+```
+
+On s'aperçoit que nos nouveaux paramètres sont corrélés à la valeur marchande.
+
+```{python}
+
+
+
+# Séparation des features et de la cible
+features = [   
+            'total_goals', 'total_assists', 'total_minutes_played','highest_market_value_in_eur','last_season','age',
+            'contract_years_remaining','offensive_contribution','interaction_goals_minutes','interaction_height_goals']
+X = numeric_data[features]
+y = numeric_data['market_value_in_eur']
+
+# Séparation en jeu d'entraînement et de test
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+# Prétraitement des données (normalisation des features)
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Modèle Linéaire
+linear_model = LinearRegression()
+linear_model.fit(X_train_scaled, y_train)
+
+# Prédictions avec le modèle linéaire
+y_pred_linear = linear_model.predict(X_test_scaled)
+
+# Modèle Random Forest
+rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+rf_model.fit(X_train, y_train)
+
+# Prédictions avec le modèle Random Forest
+y_pred_rf = rf_model.predict(X_test)
+
+# Évaluation des modèles
+mae_linear = mean_absolute_error(y_test, y_pred_linear)
+rmse_linear = np.sqrt(mean_squared_error(y_test, y_pred_linear))
+
+mae_rf = mean_absolute_error(y_test, y_pred_rf)
+rmse_rf = np.sqrt(mean_squared_error(y_test, y_pred_rf))
+
+# Calcul de R^2
+r2_linear = linear_model.score(X_test_scaled, y_test)
+r2_rf = rf_model.score(X_test, y_test)
+
+print(f"Linear Regression - MAE: {mae_linear:.2f}, RMSE: {rmse_linear:.2f}, R²: {r2_linear:.2f}")
+print(f"Random Forest - MAE: {mae_rf:.2f}, RMSE: {rmse_rf:.2f}, R²: {r2_rf:.2f}")
+
+
+
+```
+```{python}
+# Visualisation des résultats
+plt.figure(figsize=(12, 6))
+
+# Comparaison des erreurs résiduelles
+plt.subplot(1, 2, 1)
+plt.scatter(y_test, y_pred_linear, color='blue', alpha=0.5, label='Linear Regression')
+plt.scatter(y_test, y_pred_rf, color='red', alpha=0.5, label='Random Forest')
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'k--', lw=2)
+plt.title("Comparaison Prédictions vs Réelles")
+plt.xlabel("Valeur réelle")
+plt.ylabel("Valeur prédite")
+plt.legend()
+
+# Erreurs résiduelles
+plt.subplot(1, 2, 2)
+plt.hist(y_test - y_pred_linear, bins=50, alpha=0.7, label='Linear Regression', color='blue')
+plt.hist(y_test - y_pred_rf, bins=50, alpha=0.7, label='Random Forest', color='red')
+plt.title("Distribution des erreurs résiduelles")
+plt.xlabel("Erreur résiduelle")
+plt.ylabel("Fréquence")
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+```
+
+1. **Régression Linéaire** :  
+   - MAE: 1730430.32, RMSE: 3919189.11, R²: 0.67 
+   La régression linéaire explique environ 69 % de la variance des données. Bien que le modèle soit relativement bon, les erreurs sont assez élevées, ce qui suggère qu'il pourrait être amélioré avec un meilleur choix de caractéristiques ou un modèle plus complexe.
+
+2. **Random Forest** :  
+   - MAE : 678608.96, RMSE: 2391848.84, R² : 0.88  
+   Le modèle Random Forest obtient des résultats corrects avec un R² de 0.88, signifiant qu'il explique bien la variance des données. Les erreurs sont peu faibles, ce qui montre un bon ajustement, mais cela pourrait s'améliorer.
+   
+   
+#### 2.6 - Importance des paramètres
+Après avoir entraîné notre modèle **RandomForestRegressor**, vous pouvez accéder à l'attribut **'.feature_importances_'**, qui donne l'importance relative de chaque paramètre. 
+
+```{python}
+# Extraire les importances des caractéristiques
+importances = rf_model.feature_importances_
+
+# Créer un DataFrame avec les noms des features et leurs importances
+features = X.columns  # X est votre dataframe de features
+importance_df = pd.DataFrame({'Feature': features, 'Importance': importances})
+
+# Trier les features en fonction de leur importance
+importance_df = importance_df.sort_values(by='Importance', ascending=False)
+
+# Afficher les top features
+print(importance_df)
+```
+
+```{python}
+
+plt.figure(figsize=(6, 4)) 
+plt.barh(importance_df['Feature'], importance_df['Importance'], color='skyblue')
+plt.xlabel('Importance')
+plt.ylabel('Caractéristiques')
+plt.title('Importance des caractéristiques pour la prédiction \n de la valeur marchande')
+plt.gca().invert_yaxis()  
+
+
+plt.yticks(rotation=0)  
+plt.tight_layout()  
+plt.show()
+```
+
+Le graphique ci-dessus montre l'importance relative de chaque caractéristique pour prédire la valeur marchande d'un joueur. On remarque que la caractéristique la plus importante est **highest_market_value_in_eur**, représentant environ 67 % de l'importance totale. Cela indique que la valeur maximale précédente d'un joueur joue un rôle majeur dans la prédiction de sa valeur actuelle. 
+
+Les autres variables telles que **age** (22%) et **contract_years_remaining** (3%) ont également une influence notable, bien que moindre. D'autres caractéristiques comme **total_minutes_played**, **total_assists** et **offensive_contribution** contribuent à un moindre degré, ce qui suggère que des facteurs spécifiques de performance et d'expérience ont une importance plus faible dans cette prédiction.
+
+#### Conclusion
+
+En conclusion, **la valeur marchande actuelle est principalement déterminée par la valeur maximale atteinte dans le passé**, avec un impact supplémentaire des caractéristiques liées à l'âge et à la durée restante du contrat. D'autres caractéristiques de performance, bien que présentes, ont une influence relativement faible sur la prédiction de la valeur marchande.

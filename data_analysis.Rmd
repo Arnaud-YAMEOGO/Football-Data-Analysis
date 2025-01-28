@@ -1,0 +1,310 @@
+---
+title: "Project_Question1"
+author: "Ahmed TRAORE"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## INTRODUCTION
+
+Dans le football, comprendre les facteurs qui influencent les performances des joueurs est crucial pour optimiser les stratégies d’équipe et évaluer leur contribution. Le temps de jeu, souvent perçu comme un indicateur clé, pourrait directement influencer la probabilité de marquer des buts. Cependant, au-delà des intuitions, une analyse rigoureuse des données est nécessaire pour explorer ces relations.
+
+Cette section s’appuie sur des millions d’observations couvrant les minutes jouées, les buts marqués et d’autres métriques. L’objectif principal est de répondre à une question clé : **dans quelle mesure le temps de jeu influence-t-il la capacité d’un joueur à marquer des buts** ? Cette exploration pose également les bases de modèles prédictifs pour mieux comprendre et anticiper les performances futures.
+
+Pour cela nous allons importer toutes les bibliothèques qui nous seront utiles dans la suite.
+
+```{python}
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.cluster import KMeans
+import seaborn as sns
+
+```
+
+Dans le cadre de notre analyse des performances des joueurs de football, nous avons utilisé plusieurs jeux de données essentiels pour obtenir une vue d'ensemble complète. Ces données, une fois combinées, permettent de comprendre les interactions entre **les temps de jeu** et **les buts marqués**. Voici un aperçu des différentes sources de données et de leur rôle dans notre étude.
+
+```{python}
+data1= pd.read_csv('archive/appearances.csv')
+data2 = pd.read_csv('archive/players.csv')
+data3 = pd.read_csv('archive/clubs.csv')
+data = pd.merge(data1, data2, on='player_id', how='inner')
+data_final = pd.merge(data, data3, left_on='current_club_id', right_on='club_id', how='inner', suffixes=('_player', '_club'))
+
+```
+## Analyse des données
+
+Ce code regroupe les données par player_id et calcule le total des minutes jouées pour chaque joueur en sommant les valeurs de la colonne *minutes_played*. Cela permet d'obtenir une vue d'ensemble du temps de jeu accumulé par chaque joueur au cours des matchs.
+
+```{python}
+# Grouper par joueur et sommer les minutes jouées
+minutes_par_joueur = data_final.groupby('player_id')['minutes_played'].sum()
+
+# Afficher le résultat
+print(minutes_par_joueur)
+```
+Ensuite, nous regroupons les données par **player_id** et **player_name** et **calcule la somme des buts marqués** par chaque joueur en ne se basant pas sur le nombre de minute jouées. Cela permet d'obtenir une vue d'ensemble de la performance offensive de chaque joueur. Le résultat est ensuite trié par ordre décroissant pour afficher les joueurs ayant marqué le plus de buts.
+
+```{python}
+# Grouper par joueur et sommer les minutes jouées
+goal_per_player = data_final.groupby(['player_id','player_name'])['goals'].sum()
+
+# Afficher le résultat
+print(goal_per_player.sort_values(ascending=False))
+
+```
+Cette section de code traite les valeurs manquantes en les supprimant pour les colonnes essentielles, puis garantit que les types de données sont corrects pour les colonnes **minutes_played** et **goals**. Ensuite, elle agrège les données par joueur, en calculant le total des minutes jouées et des buts marqués, et ajoute une nouvelle métrique, le nombre de buts par minute, pour évaluer l'efficacité des joueurs.
+
+```{python, results='hide'}
+# check missing values
+data_final.isnull().sum()
+
+# drop rows with missing value
+data2_cleaned = data_final.dropna(subset=['minutes_played', 'goals'])
+
+# Ensure the data types are correct
+data2_cleaned['minutes_played'] = pd.to_numeric(data2_cleaned['minutes_played'], errors='coerce')
+data2_cleaned['goals'] = pd.to_numeric(data2_cleaned['goals'], errors='coerce')
+
+# Aggregate total playtime and goals
+player_performance = data2_cleaned.groupby('player_id').agg({
+    'minutes_played': 'sum',
+    'goals': 'sum',
+}).reset_index()
+
+# Add a "goals per minute" metric for more insights
+player_performance['goals_per_minute'] = player_performance['goals'] / player_performance['minutes_played']
+```
+Après tout ces traitements, Maintenant nous allons visualiser la relation entre les buts marqués (**goals**) et les minutes jouées (**minutes_played**) à l'aide d'un scatter plot, voir vraiament si le nombre de minute jouée impact réellement le nombre de but marqué.
+
+```{python}
+
+# Scatter plot 
+sns.scatterplot(x='minutes_played', y='goals', data=player_performance)
+plt.title("Impact of Playtime on Goals Scored")
+plt.xlabel("Minutes Played")
+plt.ylabel("Goals Scored")
+plt.show()
+```
+
+
+
+
+```{python}
+# Correlation between minutes played and goals
+correlation = player_performance[['minutes_played', 'goals']].corr()
+print("Correlation Matrix:")
+print(correlation)
+
+```
+## Choix des modèles
+
+Dans cette section, nous présentons les modèles de régression linéaire et Random Forest, choisis pour prédire le nombre de buts marqués en fonction du temps de jeu des joueurs. Ces modèles permettent de mieux comprendre l’impact du temps passé sur le terrain sur l’efficacité offensive des joueurs.
+
+### Régression Linéaire
+
+
+```{python}
+
+# Prepare data
+X = player_performance[['minutes_played']].values
+y = player_performance['goals'].values
+
+# Diviser les données en ensembles d'entraînement et de test
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Entraîner le modèle sur l'ensemble d'entraînement
+model = LinearRegression()
+model.fit(X_train, y_train)
+
+# Prédictions sur l'ensemble de test
+y_pred = model.predict(X_test)
+
+# Calculer les métriques sur l'ensemble de test
+r2 = r2_score(y_test, y_pred)
+mse = mean_squared_error(y_test, y_pred)
+rmse = np.sqrt(mse)
+
+# Print the slope and intercept
+print("Slope (impact per minute):", model.coef_[0])
+print("Intercept (baseline goals):", model.intercept_)
+print("Coefficient de détermination (R^2):", r2)
+print("Erreur quadratique moyenne (MSE):", mse)
+print("Racine carrée de l'erreur quadratique moyenne (RMSE):", rmse)
+
+```
+**Interpretation des résultats**
+
+Pente (Slope) :
+
+La valeur de la pente est 0.0015, ce qui signifie qu’en moyenne, pour chaque minute supplémentaire jouée, un joueur marque environ 0.0015 but.
+Cela correspond à un impact positif mais très faible du temps de jeu sur les buts marqués.
+Ordonnée à l'origine (Intercept) :
+
+La valeur de l’intercept est -0.52, ce qui indique que dans ce modèle, un joueur sans temps de jeu aurait un score négatif. Cela n’a pas de sens pratique mais est une conséquence des limitations du modèle linéaire.
+Coefficient de détermination (R²) :
+
+Avec une valeur de 0.33, le modèle explique environ 33 % de la variance des buts marqués en fonction du temps de jeu. Bien que non négligeable, cela suggère qu'il y a d'autres facteurs importants non pris en compte par ce modèle.
+Erreur quadratique moyenne (MSE) et RMSE :
+
+La MSE (212.93) et la RMSE (14.59) indiquent que les prédictions du modèle s’écartent de manière significative des valeurs réelles. Cela reflète les limites de la régression linéaire dans ce contexte, notamment pour capturer des relations non linéaires.
+
+
+Pour aller au-delà des limitations du modèle de régression linéaire, nous utilisons un modèle **Random Forest**. Ce modèle est plus flexible et peut mieux capturer des relations complexes et non linéaires entre les minutes jouées et les buts marqués. Dans la suite, nous allons entraîner un **Random Forest** pour améliorer la précision des prédictions et analyser l’importance des variables dans l’explication des performances des joueurs.
+
+### Random Forest
+
+
+```{python}
+# Initialiser le modèle
+rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+
+# Entraîner le modèle sur l'ensemble d'entraînement
+rf_model.fit(X_train, y_train)
+
+# Prédire les buts sur l'ensemble de test
+y_pred_rf = rf_model.predict(X_test)
+
+# Évaluation du modèle sur l'ensemble de test
+r2_rf = r2_score(y_test, y_pred_rf)
+mse_rf = mean_squared_error(y_test, y_pred_rf)
+rmse_rf = np.sqrt(mse_rf)
+
+print("Random Forest - Coefficient de détermination (R^2):", r2_rf)
+print("Random Forest - Erreur quadratique moyenne (MSE):", mse_rf)
+print("Random Forest - Racine carrée de l'erreur quadratique moyenne (RMSE):", rmse_rf)
+```
+Les résultats que nous obtenons avec le modèle **Random Forest** pour prédire les buts marqués en fonction du temps de jeu sont assez décevants, avec un R² négatif (-0.008) et une erreur quadratique moyenne (MSE) relativement élevée (318.73), indiquant que le modèle ne parvient pas à capturer correctement les tendances dans les données. Le RMSE de 17.85 montre également une grande écart de prédiction, suggérant que le modèle est loin de prédire avec précision le nombre de buts marqués par les joueurs en fonction de leur temps de jeu.
+
+Ces résultats ne sont pas surprenants, car le temps de jeu seul ne peut pas être le seul facteur expliquant les buts marqués. Bien que le temps que passe un joueur sur le terrain puisse influencer sa capacité à marquer, de nombreux autres facteurs doivent être pris en compte pour avoir une vue d'ensemble plus précise et réaliste.
+
+
+Dans cette section, nous analysons les performances des joueurs en fonction de leur poste et de leur club. L'objectif est de comprendre comment ces deux facteurs influencent les minutes jouées et les buts marqués. En regroupant les données par poste et club, nous calculons les statistiques moyennes de temps de jeu et de buts pour chaque combinaison, ce qui nous permet de mettre en évidence les rôles les plus influents dans la performance offensive. Cette analyse permet également de visualiser les tendances générales, telles que l'impact du poste sur la capacité à marquer des buts.
+
+En outre, un graphique en barres des buts moyens par poste sera généré pour mieux illustrer l’importance relative de chaque rôle sur le terrain. Cela nous fournira des informations clés pour mieux comprendre les différences de performances entre les différents postes, et potentiellement, pour affiner les prédictions des buts marqués en fonction du poste et du club d'un joueur.
+
+```{python}
+# Grouper par poste et club et calculer les statistiques moyennes
+stats_by_position_club = data_final.groupby(['position', 'name_club']).agg({
+    'minutes_played': 'mean',
+    'goals': 'mean',
+}).reset_index()
+
+print(stats_by_position_club.sort_values(by='goals', ascending=False))
+# print(data.isnull().sum())
+
+# Barplot des buts moyens par poste
+sns.barplot(data=stats_by_position_club, x='position', y='goals')
+plt.title("Nombre moyen de buts par poste")
+plt.xlabel("Poste")
+plt.ylabel("Buts moyens")
+plt.xticks(rotation=45)
+plt.show()
+```
+
+
+
+
+```{python, eval=FALSE, error=FALSE}
+
+# Définir les colonnes numériques
+numerical_features = ['minutes_played']
+
+# Définir les variables catégorielles pour l'encodage
+categorical_features = ['position', 'name_club']
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', SimpleImputer(strategy='mean'), numerical_features),
+        ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features)
+    ])
+    
+
+
+# Création du modèle avec un pipeline
+model_pipeline = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('classifier', RandomForestRegressor(n_estimators=100, random_state=42))
+])
+
+data_final.dropna(subset=['minutes_played', 'position','name_club'], inplace=True)
+
+
+features = ['minutes_played', 'position','name_club']
+target = 'goals'
+
+# Diviser les données en ensembles d'entraînement et de test
+X = data_final[features]
+y = data_final[target]
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Entraîner le modèle
+model_pipeline.fit(X_train, y_train)
+
+# Prédictions sur les données de test
+y_pred = model_pipeline.predict(X_test)
+
+# Évaluation du modèle
+print("Mean Squared Error:", mean_squared_error(y_test, y_pred))
+print("Mean Absolute Error:", mean_absolute_error(y_test, y_pred))
+print("\nR2:\n", r2_score(y_test, y_pred))
+
+
+```
+```{python, echo=FALSE}
+print("Mean Squared Error:", 212.92941107327837)
+print("Mean Absolute Error:", 5.934099062311091)
+print("\nR²:", 0.32634599407642295)
+```
+
+
+
+**Interpretation des résultats**
+
+En conclusion, l'ajout de variables telles que le poste et le club améliore la capacité du modèle à prédire les buts marqués, mais d'autres facteurs et ajustements du modèle sont nécessaires pour obtenir des prédictions encore plus précises.
+
+## Conclusion
+
+En conclusion, bien que le temps de jeu soit un facteur important, il ne suffit pas à expliquer de manière exhaustive les buts marqués par un joueur. De nombreux autres éléments, tels que le poste occupé sur le terrain, le style de jeu de l’équipe, la forme physique et mentale du joueur, ainsi que des facteurs externes comme les blessures et les synergies entre joueurs, jouent également un rôle crucial dans la performance individuelle.
+
+Les résultats obtenus avec un modèle qui se concentre uniquement sur le temps de jeu montrent les limites de cette approche. Pour obtenir des prédictions plus précises et fiables, il est nécessaire d’intégrer ces différentes dimensions et de tenir compte de la complexité des interactions entre elles. Un modèle plus robuste pourrait ainsi combiner des informations sur le style tactique de l’équipe, la position du joueur, et d'autres indicateurs individuels, offrant une meilleure capacité à prédire les buts marqués.
+
+Cependant, il est important de noter que certaines variables non mesurables, comme les occasions créées, les interactions tactiques et d’autres facteurs contextuels, peuvent également avoir un impact significatif sur les performances des joueurs, mais sont difficilement accessibles ou mesurables dans les données disponibles. L'intégration de ces éléments dans un modèle complet permettrait d'obtenir une estimation beaucoup plus précise de l'influence de chaque facteur sur les performances offensives des joueurs.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
