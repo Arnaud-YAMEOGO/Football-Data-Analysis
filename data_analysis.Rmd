@@ -1,6 +1,6 @@
 ---
-title: "Project_Question1"
-author: "Ahmed TRAORE"
+title: "Project"
+author: "Group project"
 date: "`r Sys.Date()`"
 output:
   pdf_document: default
@@ -287,23 +287,6 @@ En conclusion, bien que le temps de jeu soit un facteur important, il ne suffit 
 Les résultats obtenus avec un modèle qui se concentre uniquement sur le temps de jeu montrent les limites de cette approche. Pour obtenir des prédictions plus précises et fiables, il est nécessaire d’intégrer ces différentes dimensions et de tenir compte de la complexité des interactions entre elles. Un modèle plus robuste pourrait ainsi combiner des informations sur le style tactique de l’équipe, la position du joueur, et d'autres indicateurs individuels, offrant une meilleure capacité à prédire les buts marqués.
 
 Cependant, il est important de noter que certaines variables non mesurables, comme les occasions créées, les interactions tactiques et d’autres facteurs contextuels, peuvent également avoir un impact significatif sur les performances des joueurs, mais sont difficilement accessibles ou mesurables dans les données disponibles. L'intégration de ces éléments dans un modèle complet permettrait d'obtenir une estimation beaucoup plus précise de l'influence de chaque facteur sur les performances offensives des joueurs.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
